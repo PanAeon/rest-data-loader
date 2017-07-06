@@ -28,6 +28,9 @@ library
                      , tiphys
                      , wreq
                      , http-conduit
+                     , jsaddle
+                     , directory
+                     , optparse-applicative
   default-language:    Haskell2010
 
 executable rest-data-loader-exe
@@ -36,6 +39,8 @@ executable rest-data-loader-exe
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
                      , rest-data-loader
+                     , optparse-applicative
+                     , directory
   default-language:    Haskell2010
 
 test-suite rest-data-loader-test
