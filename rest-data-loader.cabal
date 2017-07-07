@@ -31,6 +31,8 @@ library
                      , jsaddle
                      , directory
                      , optparse-applicative
+                     , bytestring
+                     , containers
   default-language:    Haskell2010
 
 executable rest-data-loader-exe
@@ -41,6 +43,10 @@ executable rest-data-loader-exe
                      , rest-data-loader
                      , optparse-applicative
                      , directory
+                     , bytestring
+                     , aeson
+                     , tiphys
+                     , containers
   default-language:    Haskell2010
 
 test-suite rest-data-loader-test

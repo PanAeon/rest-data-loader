@@ -1,11 +1,21 @@
+{-# LANGUAGE OverloadedStrings, DeriveGeneric #-}
+
 module Main where
 
 import Lib
 import qualified System.Directory as Dir
 import Data.Foldable(forM_)
 import Options.Applicative
+import Data.List(isSuffixOf, stripPrefix)
 import Data.Semigroup ((<>))
 import System.Exit
+import qualified Data.ByteString.Lazy as B
+import qualified Data.Aeson as Aeson
+import GHC.Generics
+import Control.Monad(filterM)
+import qualified Data.Map as Map
+-- FIXME: I believe I had find out some sort of immutable hashtable or trie
+
 -- https://haskell-lang.org/library/http-client
 -- https://hackage.haskell.org/package/hs-duktape
 -- https://hackage.haskell.org/package/jsaddle
@@ -49,16 +59,54 @@ main = main' =<< execParser opts
 checkWorkingDirectory :: FilePath -> IO Bool
 checkWorkingDirectory = Dir.doesFileExist . (++"/manifest.json")
 
+
+readJSON :: FilePath -> IO (Either String Aeson.Value)
+readJSON path =  fmap Aeson.eitherDecode (B.readFile path)
+
+data Manifest = Manifest {
+         _host :: String,
+         _port :: Int
+} deriving (Show, Generic)
+
+instance Aeson.FromJSON Manifest
+instance Aeson.ToJSON Manifest
+
+-- FIXME: create Configuration class
+
 -- FIXME: _ifM ??? Control.Monad.Extra
 main' :: ProgramArguments -> IO ()
 main' (ProgramArguments workDir) = createWorkingDirectoryIfMissing >>
       checkWorkingDirectory workDir
       >>= (\manifestExists ->
         if (manifestExists) then
-          doWork workDir
+          parseData workDir
         else
           (putStrLn $ "Error: manifest.json doesn't exist in dir: '" ++ workDir ++ "'")
             >> (exitWith $ ExitFailure (-1))
       )
-doWork workDir =  (Dir.listDirectory workDir)
+
+parseData :: FilePath -> IO ()
+parseData workDir = do
+                    xs   <-  files
+                    let ys = filter (isSuffixOf ".json") $ filter (/="manifest.json") xs
+                    zs <- filterM (Dir.doesFileExist . ((workDir ++ "/")++)) ys
+                --    let zzs = map ((workDir ++ "/")++) zs
+                    mapM_ putStrLn zs
+                    -- FIXME: arrows, collect errors (with applicative?)
+                    ts <- sequence $ map (\p ->
+                                    (readJSON $ toAbsolute p) >>= (\e -> return (stripSuffix ".json" p, e))
+                              ) zs -- FIXME: but you want not full path => json, but name => json !!
+                    let m = Map.fromList ts
+                    putStrLn $ show m
+                    --return ()
+                    -- haleluya
+                    where
+                      files = (Dir.listDirectory workDir)
+                      toAbsolute = ((workDir ++ "/")++)
+                      stripSuffix sfx lst =
+                        case stripPrefix (reverse sfx) (reverse lst) of
+                            Nothing -> Nothing
+                            Just ys -> Just (reverse ys)
+
+parseData' workDir =  (Dir.listDirectory workDir)
        >>= ( mapM_ putStrLn)
