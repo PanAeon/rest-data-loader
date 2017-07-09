@@ -7,7 +7,7 @@ import qualified System.Directory as Dir
 import Data.Foldable(forM_)
 import Options.Applicative
 import Data.Maybe(fromJust, fromMaybe)
-import Data.List(isSuffixOf, stripPrefix)
+import Data.List(isSuffixOf, stripPrefix, partition)
 import Data.Semigroup ((<>))
 import System.IO(stderr, hPutStrLn)
 import System.Exit
@@ -87,24 +87,23 @@ dieHard msg = do
   exitFailure
 
 
-data Node = Node String [Node]
+data Node = Node String [Node] deriving Show
 
-buildDAG:: [(String, [String])] -> [Node] -- TODO: either string, node
-buildDAG xs = res
+buildDAG:: [(String, [String])] -> [Node] -- FIXME: either string, node
+buildDAG xs = fmap (\x -> buildDAG' x rest) roots
            where
              deps = Set.fromList . join $ fmap snd xs
-             roots = filter (flip Set.member deps) $ fmap fst xs -- could have used simple list difference
-             res = fmap (\r ->
-                            let
-                                  (_, descendants) = fromJust $ find ((==r) . fst) xs
-                                  rest = filter ((/=r) . fst) xs -- span ???
-                                  dNodes = fmap (\d -> fromJust $ find ((==d) . fst) rest) descendants
+             (rest, roots) = partition (flip Set.member deps . fst)  xs -- span, something else ...partition
 
-                            in
-                              Node r undefined -- TODO: build graph for descendants
 
-                         ) roots
 
+buildDAG' :: (String, [String]) -> [(String, [String])] -> Node
+buildDAG' root@(r, descendants) xs = let
+                       rest = filter ((/=r) . fst) xs -- span ???
+                       desc = fmap (\d -> fromJust $ find ((==d) . fst) rest) descendants
+                       descNodes = fmap (\d -> buildDAG' d rest) desc
+                    in
+                       Node r descNodes
 
 
 -- FIXME: _ifM ??? Control.Monad.Extra
