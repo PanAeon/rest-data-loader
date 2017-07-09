@@ -6,14 +6,18 @@ import Lib
 import qualified System.Directory as Dir
 import Data.Foldable(forM_)
 import Options.Applicative
+import Data.Maybe(fromJust, fromMaybe)
 import Data.List(isSuffixOf, stripPrefix)
 import Data.Semigroup ((<>))
+import System.IO(stderr, hPutStrLn)
 import System.Exit
 import qualified Data.ByteString.Lazy as B
 import qualified Data.Aeson as Aeson
 import GHC.Generics
-import Control.Monad(filterM)
+import Control.Monad(filterM, join)
 import qualified Data.Map as Map
+import qualified Data.Set as Set
+import Data.Foldable(find) -- bloody prelude
 -- FIXME: I believe I had find out some sort of immutable hashtable or trie
 
 -- https://haskell-lang.org/library/http-client
@@ -71,7 +75,37 @@ data Manifest = Manifest {
 instance Aeson.FromJSON Manifest
 instance Aeson.ToJSON Manifest
 
+data ImportDefinition = ImportDefinition String Aeson.Value
+
+data ImportDefinition' = ImportDefinition' String [String] Aeson.Value
+
 -- FIXME: create Configuration class
+-- FIXME: alternative, accumulating errors, applicative
+dieHard:: String -> IO ()
+dieHard msg = do
+  hPutStrLn stderr msg
+  exitFailure
+
+
+data Node = Node String [Node]
+
+buildDAG:: [(String, [String])] -> [Node] -- TODO: either string, node
+buildDAG xs = res
+           where
+             deps = Set.fromList . join $ fmap snd xs
+             roots = filter (flip Set.member deps) $ fmap fst xs -- could have used simple list difference
+             res = fmap (\r ->
+                            let
+                                  (_, descendants) = fromJust $ find ((==r) . fst) xs
+                                  rest = filter ((/=r) . fst) xs -- span ???
+                                  dNodes = fmap (\d -> fromJust $ find ((==d) . fst) rest) descendants
+
+                            in
+                              Node r undefined -- TODO: build graph for descendants
+
+                         ) roots
+
+
 
 -- FIXME: _ifM ??? Control.Monad.Extra
 main' :: ProgramArguments -> IO ()
@@ -85,6 +119,7 @@ main' (ProgramArguments workDir) = createWorkingDirectoryIfMissing >>
             >> (exitWith $ ExitFailure (-1))
       )
 
+-- FIXME: AESON parse errors are somehow stupid
 parseData :: FilePath -> IO ()
 parseData workDir = do
                     xs   <-  files
@@ -94,19 +129,22 @@ parseData workDir = do
                     mapM_ putStrLn zs
                     -- FIXME: arrows, collect errors (with applicative?)
                     ts <- sequence $ map (\p ->
-                                    (readJSON $ toAbsolute p) >>= (\e -> return (stripSuffix ".json" p, e))
+                                    (readJSON $ toAbsolute p) >>= (\e ->
+                                       return $ fmap (\v -> (stripSuffix ".json" p, v)) e
+                                    )
                               ) zs -- FIXME: but you want not full path => json, but name => json !!
-                    let m = Map.fromList ts
-                    putStrLn $ show m
-                    --return ()
-                    -- haleluya
+                    let tts = sequence ts
+                    either dieHard (\rest ->
+                          putStrLn $ show (Map.fromList rest)
+                      ) tts
+
                     where
                       files = (Dir.listDirectory workDir)
                       toAbsolute = ((workDir ++ "/")++)
+                      stripSuffix:: String -> String -> String
                       stripSuffix sfx lst =
-                        case stripPrefix (reverse sfx) (reverse lst) of
-                            Nothing -> Nothing
-                            Just ys -> Just (reverse ys)
+                        fromMaybe lst $ fmap (reverse) $ stripPrefix (reverse sfx) (reverse lst)
+
 
 parseData' workDir =  (Dir.listDirectory workDir)
        >>= ( mapM_ putStrLn)
