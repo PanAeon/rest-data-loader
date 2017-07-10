@@ -7,7 +7,7 @@ import qualified System.Directory as Dir
 import Data.Foldable(forM_)
 import Options.Applicative
 import Data.Maybe(fromJust, fromMaybe)
-import Data.List(isSuffixOf, stripPrefix, partition)
+import Data.List(isSuffixOf, stripPrefix, partition, intercalate)
 import Data.Semigroup ((<>))
 import System.IO(stderr, hPutStrLn)
 import System.Exit
@@ -17,6 +17,7 @@ import GHC.Generics
 import Control.Monad(filterM, join)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Data.Either.Utils(maybeToEither)
 import Data.Foldable(find) -- bloody prelude
 -- FIXME: I believe I had find out some sort of immutable hashtable or trie
 
@@ -89,21 +90,27 @@ dieHard msg = do
 
 data Node = Node String [Node] deriving Show
 
-buildDAG:: [(String, [String])] -> [Node] -- FIXME: either string, node
-buildDAG xs = fmap (\x -> buildDAG' x rest) roots
+buildDAG:: [(String, [String])] -> Either String [Node]
+buildDAG xs = sequence $ fmap (\x -> buildDAG' x [] rest) roots
            where
              deps = Set.fromList . join $ fmap snd xs
-             (rest, roots) = partition (flip Set.member deps . fst)  xs -- span, something else ...partition
+             (rest, roots) = partition (flip Set.member deps . fst)  xs
 
 
+-- TODO: it works, but not found and cyclic deps errors are undistinguishable
+-- can verify it upstream
+-- still need to pass a list of parents
+buildDAG' :: (String, [String]) -> [String] -> [(String, [String])] -> Either String Node
+buildDAG' root@(r, descendants) parents xs = let
+                       rest = filter ((/=r) . fst) xs
+                       descE = sequence $ fmap (\d -> maybeToEither ("Cyclic dependency with " ++ (intercalate "=>" (reverse parents)) ++ "=>" ++ d) $ find ((==d) . fst) rest) descendants
 
-buildDAG' :: (String, [String]) -> [(String, [String])] -> Node
-buildDAG' root@(r, descendants) xs = let
-                       rest = filter ((/=r) . fst) xs -- span ???
-                       desc = fmap (\d -> fromJust $ find ((==d) . fst) rest) descendants
-                       descNodes = fmap (\d -> buildDAG' d rest) desc
                     in
-                       Node r descNodes
+                       do
+                         desc <- descE
+                         descNodesE <- sequence $ fmap (\d -> buildDAG' d (r : parents) rest) desc
+
+                         return $ Node r descNodesE
 
 
 -- FIXME: _ifM ??? Control.Monad.Extra
