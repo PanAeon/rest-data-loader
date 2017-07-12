@@ -19,6 +19,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Either.Utils(maybeToEither)
 import Data.Foldable(find) -- bloody prelude
+import Data.Either.Combinators(mapRight)
 -- FIXME: I believe I had find out some sort of immutable hashtable or trie
 
 -- https://haskell-lang.org/library/http-client
@@ -90,20 +91,33 @@ dieHard msg = do
 
 data Node = Node String [Node] deriving Show
 
+-- TODO "check for empty string in dependencies"
+-- TODO "move noNothing up, and add directory to output"
 buildDAG:: [(String, [String])] -> Either String [Node]
-buildDAG xs = sequence $ fmap (\x -> buildDAG' x [] rest) roots
+buildDAG xs = noNothing *> noRoots *> missingEither *> (sequence $ fmap (\x -> buildDAG' x [] rest) roots)
            where
+             allNodes = Set.fromList $ fmap fst xs
              deps = Set.fromList . join $ fmap snd xs
+             missingDeps = deps Set.\\ allNodes
+             missingEither = if (null missingDeps) then
+                                Right ()
+                             else
+                                Left $ "Missing dependencies: " ++ (intercalate ", " $ Set.toList missingDeps)
              (rest, roots) = partition (flip Set.member deps . fst)  xs
+             noRoots :: Either String ()
+             noRoots = if (null roots) then
+                         mapRight (const ()) $ buildDAG' (head rest)  [] (tail rest)
+                       else
+                         Right ()
+             noNothing = if (null xs) then Left "No import *.json files found in dir <dir>"
+                                    else Right ()
 
 
--- TODO: it works, but not found and cyclic deps errors are undistinguishable
--- can verify it upstream
--- still need to pass a list of parents
+
 buildDAG' :: (String, [String]) -> [String] -> [(String, [String])] -> Either String Node
 buildDAG' root@(r, descendants) parents xs = let
                        rest = filter ((/=r) . fst) xs
-                       descE = sequence $ fmap (\d -> maybeToEither ("Cyclic dependency with " ++ (intercalate "=>" (reverse parents)) ++ "=>" ++ d) $ find ((==d) . fst) rest) descendants
+                       descE = sequence $ fmap (\d -> maybeToEither ("Cyclic dependency with " ++ (intercalate "=>" (reverse parents)) ++ "=>" ++ r ++ "=>" ++ d) $ find ((==d) . fst) rest) descendants
 
                     in
                        do

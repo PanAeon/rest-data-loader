@@ -34,6 +34,7 @@ library
                      , bytestring
                      , containers
                      , MissingH
+                     , either
   default-language:    Haskell2010
 
 executable rest-data-loader-exe
@@ -49,6 +50,7 @@ executable rest-data-loader-exe
                      , tiphys
                      , containers
                      , MissingH
+                     , either
   default-language:    Haskell2010
 
 test-suite rest-data-loader-test
