@@ -140,6 +140,7 @@ main' (ProgramArguments workDir) = createWorkingDirectoryIfMissing >>
       )
 
 -- FIXME: AESON parse errors are somehow stupid
+-- FIXME: use easy-json to pre-validate data
 parseData :: FilePath -> IO ()
 parseData workDir = do
                     xs   <-  files
