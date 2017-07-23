@@ -6,7 +6,7 @@ import Lib
 import qualified System.Directory as Dir
 import Data.Foldable(forM_)
 import Options.Applicative
-import Data.Maybe(fromJust, fromMaybe)
+import Data.Maybe(fromJust, fromMaybe, isJust)
 import Data.List(isSuffixOf, stripPrefix, partition, intercalate)
 import Data.Semigroup ((<>))
 import System.IO(stderr, hPutStrLn)
@@ -20,6 +20,7 @@ import qualified Data.Set as Set
 import Data.Either.Utils(maybeToEither)
 import Data.Foldable(find) -- bloody prelude
 import Data.Either.Combinators(mapRight)
+import qualified Data.EasyJSON as EJ
 -- FIXME: I believe I had find out some sort of immutable hashtable or trie
 
 -- https://haskell-lang.org/library/http-client
@@ -93,6 +94,8 @@ data Node = Node String [Node] deriving Show
 
 -- TODO "check for empty string in dependencies"
 -- TODO "move noNothing up, and add directory to output"
+-- FIXME: actually your need inverse of this
+-- can use Data.Tree and bottom-up traversal
 buildDAG:: [(String, [String])] -> Either String [Node]
 buildDAG xs = noNothing *> noRoots *> missingEither *> (sequence $ fmap (\x -> buildDAG' x [] rest) roots)
            where
@@ -141,6 +144,17 @@ main' (ProgramArguments workDir) = createWorkingDirectoryIfMissing >>
 
 -- FIXME: AESON parse errors are somehow stupid
 -- FIXME: use easy-json to pre-validate data
+
+-- FIXME: return error, don't print it inside the IO
+validateJSON :: FilePath -> IO (Either String Aeson.Value)
+validateJSON p = EJ.readFileToJSON p >>= (\res -> -- FIXME: fmap or inverse,???
+                   return $ if isJust res then
+                     Right (fromJust res)
+                   else
+                     Left ""
+                 )
+
+
 parseData :: FilePath -> IO ()
 parseData workDir = do
                     xs   <-  files
@@ -150,6 +164,7 @@ parseData workDir = do
                     mapM_ putStrLn zs
                     -- FIXME: arrows, collect errors (with applicative?)
                     ts <- sequence $ map (\p ->
+                                    (validateJSON $ toAbsolute p) >> -- remove readJSON?
                                     (readJSON $ toAbsolute p) >>= (\e ->
                                        return $ fmap (\v -> (stripSuffix ".json" p, v)) e
                                     )
