@@ -27,22 +27,27 @@ regularParse p = parse p ""
 
 
 expr' :: Parser Expr
-expr' = expr
+expr' =  apply
 
 pexpr' :: Parser Expr
-pexpr' = parens expr
+pexpr' = parens expr'
+
+
+
+apply :: Parser Expr
+apply =
+   ((,) <$> (expr <* ws) <*> optionMaybe expr) >>= ( \foo ->
+      case foo of
+         (e1, Just e2) -> return $ App e1 e2
+         (e1, _) -> return $ e1
+   )
+
 
 expr :: Parser Expr
 expr =
-        (try lambda)
-        <|>  try (
-           ((,) <$> (expr <* ws) <*> optionMaybe expr') >>= ( \foo ->
-              case foo of
-                 (e1, Just e2) -> return $ App e1 e2
-                 (e1, _) -> return $ e1
-           )
-         )
-         <|> pexpr'
+        lambda
+        <|> variable
+        <|> pexpr'
         -- left factoring !! rubbish ))
 
 {-
