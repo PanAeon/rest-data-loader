@@ -27,19 +27,22 @@ regularParse p = parse p ""
 
 
 expr' :: Parser Expr
-expr' = ((parens expr) <|> expr) <* eof
+expr' = expr
 
+pexpr' :: Parser Expr
+pexpr' = parens expr
 
 expr :: Parser Expr
 expr =
-        lambda
-        <|>  (
-           ((,) <$> (variable <* ws) <*> optionMaybe expr') >>= ( \foo ->
+        (try lambda)
+        <|>  try (
+           ((,) <$> (expr <* ws) <*> optionMaybe expr') >>= ( \foo ->
               case foo of
                  (e1, Just e2) -> return $ App e1 e2
                  (e1, _) -> return $ e1
            )
          )
+         <|> pexpr'
         -- left factoring !! rubbish ))
 
 {-
@@ -59,6 +62,7 @@ lambda =  Lambda <$> (  lambdaLit *> ws *> letter <* ws <* char '.' <* ws) <*> (
 lambdaLit :: Parser Char
 lambdaLit = oneOf ['\\', 'λ', '+']
 
+variable :: Parser Expr
 variable = fmap Var letter
 
 --constant :: Parser Expr
@@ -68,7 +72,7 @@ variable = fmap Var letter
 
 
 parens :: Parser a -> Parser a
-parens p = char '(' *> ws *>  p <* (char ')')
+parens p = char '(' *> ws *>  p <* ws <* (char ')')
 
 
 ws :: Parser ()
