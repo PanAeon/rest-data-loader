@@ -11,7 +11,7 @@ import Control.Monad (void, ap)
 import Data.Char (isLetter, isDigit)
 import qualified Data.Vector as V
 import Data.Char(digitToInt)
-import Data.List(delete, union)
+import Data.List(delete, union, find)
 
 --import Control.Applicative
 
@@ -21,6 +21,9 @@ data Expr = Var Char  | App Expr Expr | Lambda Char Expr -- | const
             deriving (Show)
 
 
+
+parseOrError :: String -> Expr
+parseOrError s =  either (\x -> error (show x)) id (regularParse expr' s)
 
 regularParse :: Parser a -> String -> Either ParseError a
 regularParse p = parse p ""
@@ -101,9 +104,9 @@ alpha x z (Var y) | x == y    = Var z
                   | otherwise =  Var y
 alpha x z (App a b) = App (alpha x z a) (alpha x z b)
 alpha x z (Lambda y f) | x == y = Lambda y f -- ???
-                       | otherwise = if elem y (freeV f)
+                       | otherwise = if elem x (freeV f)
                                      then
-                                       error "y in FV (f)"
+                                       error "x in FV (f)"
                                      else
                                       Lambda y (alpha x z f)
 
@@ -119,8 +122,24 @@ subst x e' l@(Lambda y f) | x == y = l
                                           Lambda y (subst x e' f)
 
 
+needsAlpha :: Expr -> Expr -> Bool
+needsAlpha e' (Lambda y _) = elem y (freeV e')
+needsAlpha _ _             = False
+
+fixFreeVars :: Char -> Expr -> (Char, Expr)
+fixFreeVars x e = (s, alpha x s e)
+   where
+     symbols = ['a'..'z']
+     fv      = freeV e
+     s       = maybe (error "not enough vars!") id $ find (\z -> not $ elem z fv) symbols
+
+
 beta :: Expr -> Expr
-beta (App (Lambda v e) e') = subst v e' e -- FIXME: do alpha if needed
+beta (App l@(Lambda v e) e') = if needsAlpha e' l then
+                                  let (v', efixed) = fixFreeVars v e
+                                  in subst v' e' efixed
+                               else
+                                 subst v e' e -- FIXME: do alpha if needed
 beta x = x
 
 -------------------- write interpreter --------------------------------
