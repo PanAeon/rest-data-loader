@@ -1,11 +1,12 @@
-module RestDataLoader.Lambda() where
+module RestDataLoader.Lambda(interpreter) where
 
 
 import Text.Parsec (ParseError)
+import Text.Parsec.Token(lexeme)
 import Text.Parsec.String (Parser)
-import Text.Parsec.Prim (parse, try)
+import Text.Parsec.Prim (parse, try, (<?>))
 import Text.Parsec.Char (oneOf, char, digit, letter, satisfy)
-import Text.Parsec.Combinator (many1, chainl1, between, eof, optionMaybe)
+import Text.Parsec.Combinator (many1, chainl1, between, eof, optionMaybe, notFollowedBy, anyToken)
 import Control.Applicative ((<$>), (<**>), (<*>), (<*), (*>), (<|>), many, (<$))
 import Control.Monad (void, ap)
 import Data.Char (isLetter, isDigit)
@@ -18,7 +19,7 @@ import Data.List(delete, union, find)
 data Variable = Variable Char
 
 data Expr = Var Char  | App Expr Expr | Lambda Char Expr -- | const
-            deriving (Show)
+            deriving (Show, Eq)
 
 
 
@@ -28,6 +29,10 @@ parseOrError s =  either (\x -> error (show x)) id (regularParse expr' s)
 regularParse :: Parser a -> String -> Either ParseError a
 regularParse p = parse p ""
 
+
+
+expr'' :: Parser Expr
+expr'' = expr' <* ws <* eof
 
 expr' :: Parser Expr
 expr' =  apply
@@ -50,7 +55,7 @@ expr :: Parser Expr
 expr =
         lambda
         <|> variable
-        <|> pexpr'
+        <|> (parens expr')
         -- left factoring !! rubbish ))
 
 {-
@@ -80,7 +85,18 @@ variable = fmap Var letter
 
 
 parens :: Parser a -> Parser a
-parens p = char '(' *> ws *>  p <* ws <* (char ')')
+parens p =  char '(' *> ws *>  p <* ws <*  char ')'
+
+
+--parens' = between (char '(') (char ')')
+-- parens' :: Parser a -> Parser a
+-- parens' p = do
+--     void $ char '('
+--     e <- p
+--     void $ char ')'
+--     return e
+
+
 
 
 ws :: Parser ()
@@ -142,4 +158,22 @@ beta (App l@(Lambda v e) e') = if needsAlpha e' l then
                                  subst v e' e -- FIXME: do alpha if needed
 beta x = x
 
+------------ FIXME: beta, consecutive apply ----------------------------
+
 -------------------- write interpreter --------------------------------
+-- "(((\\x y.(y x))(((((\\x y. (y x))(((\\x.x) 12)))) (\\x.x))))(\\x.x))"
+-- "((\\f.\\x.f (f (f x))) ((\\f.\\x.f (f x)) (\\n.\\f.\\x.f ((n f) x)))) (\\f.\\x.x)"
+performReduction :: Expr -> [Expr]
+performReduction e = if e' == e
+                     then [e]
+                     else e': performReduction e'
+     where
+       e' = beta e
+
+interpreter :: IO ()
+interpreter = do
+               input <- getLine
+               let res = case regularParse expr' input of
+                          (Left err) ->   "fail. " ++ (show err)
+                          (Right expr) -> "ok"
+               putStrLn res
