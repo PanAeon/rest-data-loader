@@ -123,7 +123,7 @@ alpha x z (Var y) | x == y    = Var z
                   | otherwise =  Var y
 alpha x z (App a b) = App (alpha x z a) (alpha x z b)
 alpha x z (Lambda y f) | x == y = Lambda y f -- ???
-                       | otherwise = if elem x (freeV f)
+                       | otherwise = if elem z (freeV f)
                                      then
                                        error "x in FV (f)"
                                      else
@@ -134,9 +134,9 @@ subst c e2 v@(Var y) | c == y    = e2
                      | otherwise = v
 subst c e2 (App a b)  = App (subst c e2 a) (subst c e2 b)
 subst c e2 l@(Lambda y f) | c == y = l
-                          | otherwise = if elem y (freeV e2)
+                          | otherwise = if elem c (freeV e2)
                                         then
-                                          error "y in FV (f)" -- FIXME: replace
+                                          error $ "error in subst: '" ++ [c] ++ "' in FW " ++ (show e2)
                                         else
                                           Lambda y (subst c e2 f)
 
@@ -146,10 +146,10 @@ needsAlpha e2 (Lambda y _) = elem (y) (freeV e2)
 needsAlpha _ _             = False
 
 fixFreeVars :: Expr -> Expr -> (Char, Expr)
-fixFreeVars e2 (Lambda v e1) = (s, alpha v s e1)
+fixFreeVars e2 (Lambda x e1) = (s, alpha x s e1)
    where
      symbols = ['a'..'z']
-     fv      = traceShowId $ freeV e2
+     fv      = freeV e2
      s       = maybe (error "not enough vars!") id $ find (\z -> not $ elem z fv) symbols
 
 
@@ -166,7 +166,7 @@ subst' l@(Lambda v e1) e2 = if traceShowId $ needsAlpha e2 l then
                               let (v', e1') = fixFreeVars e2 l
                               in subst v' e2 e1'
                             else
-                              trace "woot?" $ subst v e2 e1
+                               subst v e2 e1
 
 -- call-by-name, computes weak head normal form
 cbn :: Expr -> Expr
