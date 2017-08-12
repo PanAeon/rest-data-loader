@@ -161,6 +161,8 @@ isLambda _ = False
 
 -- same as subst, but will invoke alpha if needed
 
+-- FIXME: trace, single step
+
 subst' :: Expr -> Expr -> Expr
 subst' l@(Lambda v e1) e2 = if traceShowId $ needsAlpha e2 l then
                               let (v', e1') = fixFreeVars e2 l
