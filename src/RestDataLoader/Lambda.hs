@@ -14,6 +14,8 @@ import qualified Data.Vector as V
 import Data.Char(digitToInt)
 import Data.List(delete, union, find)
 import Debug.Trace(trace, traceShow, traceShowId)
+import Control.Monad.Writer(Writer)
+import qualified Control.Monad.Writer as Writer
 --import Control.Applicative
 
 data Variable = Variable Char
@@ -185,10 +187,22 @@ beta (App e1 e2) = case cbn e1 of
                     l@(Lambda x e) -> beta $ subst' l e2
                     e1'            -> let e1'' = beta e1'
                                       in App e1'' (beta e2)
-
 beta v@(Var _) = v
 beta (Lambda v e) = Lambda v $ beta e
 
+
+type Ctxt = Expr -> Expr
+
+lamC x = Lambda x
+app2 e1  = App e1
+app1 e2  = flip (App) e2
+
+beta' :: Ctxt -> Expr -> Writer String Expr
+beta' ctxt (App e1 e2) = case cbn e1 of
+                    l@(Lambda x e) -> (beta' ctxt) $ subst' l e2
+                    e1'            -> App <$> (beta' ctxt e1') <*> (beta' ctxt e2)
+beta' ctxt (Lambda v e) = fmap (\r -> Lambda v r) $ beta' ctxt e
+beta' ctxt v@(Var _) = return v
 
 ------------ FIXME: beta, consecutive apply ----------------------------
 
