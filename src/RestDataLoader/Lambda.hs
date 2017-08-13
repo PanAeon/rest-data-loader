@@ -14,7 +14,7 @@ import qualified Data.Vector as V
 import Data.Char(digitToInt)
 import Data.List(delete, union, find)
 import Debug.Trace(trace, traceShow, traceShowId)
-import Control.Monad.Writer(Writer)
+import Control.Monad.Writer(Writer,tell)
 import qualified Control.Monad.Writer as Writer
 --import Control.Applicative
 
@@ -193,24 +193,73 @@ beta (Lambda v e) = Lambda v $ beta e
 
 type Ctxt = Expr -> Expr
 
-lamC x = Lambda x
-app2 e1  = App e1
-app1 e2  = flip (App) e2
+lambdaC x = Lambda x
+app2C e1  = App e1
+app1C e2  = flip (App) e2
 
-beta' :: Ctxt -> Expr -> Writer String Expr
-beta' ctxt (App e1 e2) = case cbn e1 of
-                    l@(Lambda x e) -> (beta' ctxt) $ subst' l e2
-                    e1'            -> App <$> (beta' ctxt e1') <*> (beta' ctxt e2)
-beta' ctxt (Lambda v e) = fmap (\r -> Lambda v r) $ beta' ctxt e
+substc :: Ctxt -> Expr -> Expr -> Writer [String] Expr
+substc ctxt l@(Lambda v e1) e2 = if  needsAlpha e2 l then
+                              let (v', e1') = fixFreeVars e2 l
+                              in do
+                                 tell $ [pprint $ ctxt $ App l e2]
+                                 return $ subst v' e2 e1'
+                            else do
+                                 tell $ [pprint $ ctxt $ App l e2]
+                                 return $ subst v e2 e1
+
+cbn' :: Ctxt -> Expr -> Writer [String] Expr
+cbn' ctxt v@(Var _) = return v
+cbn' ctxt l@(Lambda _ _) = return l
+cbn' ctxt (App e1 e2) = (cbn' (ctxt . app1C e2) e1) >>= \e1' ->
+                          case e1' of
+                            l@(Lambda x e) -> substc ctxt l e2 >>= (cbn' ctxt)
+                            _          -> return $ App e1' e2
+
+beta' :: Ctxt -> Expr -> Writer [String] Expr
+beta' ctxt (App e1 e2) =  (cbn' (ctxt . app1C e2) e1) >>= \e1' ->
+                             case e1' of
+                               l@(Lambda x e) -> (beta' (ctxt))  =<< substc ctxt l e2
+                               _              -> App <$> (beta' (ctxt . app1C e2) e1') <*> (beta' (ctxt . app2C e1') e2)
+beta' ctxt (Lambda v e) = fmap (Lambda v) $ beta' (ctxt . lambdaC v) e
 beta' ctxt v@(Var _) = return v
+
+
+
+
+
+runTestA = do
+           sequence $ fmap (\x -> putStrLn $ "==> " ++ x) xs
+           putStrLn $ "==> " ++ pprint r
+  where
+     (r, xs) = Writer.runWriter $ beta' id $ parseOrError "(λn.λf.λx.f (n f x)) (λf.λx.f (f x))"
+
+runTestB s = do
+           sequence $ fmap (\x -> putStrLn $ "==> " ++ x) xs
+           putStrLn $ "==> " ++ pprint r
+  where
+     (r, xs) = Writer.runWriter $ beta' id $ parseOrError s
+
 
 ------------ FIXME: beta, consecutive apply ----------------------------
 
 
+-- pprint :: Expr -> String
+-- pprint (Var a) = [a]
+-- pprint (App a b) =    pprint a ++ " " ++ rst
+--            where
+--              rst = case b of
+--                    Var a -> [a]
+--                    _     -> "(" ++ pprint b ++")"
+-- pprint (Lambda a b) = "(" ++ "\\" ++ [a] ++ "." ++ pprint b ++ ")"
+
 pprint :: Expr -> String
 pprint (Var a) = [a]
-pprint (App a b) =   pprint a ++ " " ++ "(" ++ pprint b ++")"
-pprint (Lambda a b) = "\\" ++ [a] ++ "." ++ pprint b
+pprint (App a b@(App _ _)) = pprint a ++ " " ++ "(" ++ pprint b ++ ")"
+pprint (App a@(App _ _) b) =    pprint a ++ " " ++ pprint b
+pprint (App l@(Lambda _ _) b) = "(" ++ pprint l ++ ")" ++ " " ++ pprint b
+pprint (App a b) = "" ++ pprint a ++ " " ++ pprint b ++ ""
+pprint (Lambda x b) =  "\\" ++ [x] ++ "." ++ pprint b
+--pprint (Lambda x b) = "\\" ++ [x] ++ "." ++ "(" ++ pprint b ++ ")"
 
 test0 = "\\f.\\x.f ((\\n.\\f.\\x.f (n f x)) (\\f.\\x.x) f x)"
 test0Expr = Lambda 'f' (Lambda 'x' (App (Var 'f') (App (App (App (Lambda 'n' (Lambda 'f' (Lambda 'x' (App (Var 'f') (App (App (Var 'n') (Var 'f')) (Var 'x')))))) (Lambda 'f' (Lambda 'x' (Var 'x')))) (Var 'f')) (Var 'x'))))
@@ -234,3 +283,78 @@ interpreter = do
                           (Left err) ->   "fail. " ++ (show err)
                           (Right expr) -> "ok"
                putStrLn res
+
+
+--------------------------------------------------------------------------------
+----------------------- single step --------------------------------------------
+--------------------------------------------------------------------------------
+
+
+type Exception e a = Either e a
+
+throw :: e -> Exception e a
+throw = Left
+
+
+
+-- substc :: Ctxt -> Expr -> Expr -> Writer [String] Expr
+-- substc ctxt l@(Lambda v e1) e2 = if  needsAlpha e2 l then
+--                               let (v', e1') = fixFreeVars e2 l
+--                               in do
+--                                  tell $ [pprint $ ctxt $ App l e2]
+--                                  return $ subst v' e2 e1'
+--                             else do
+--                                  tell $ [pprint $ ctxt $ App l e2]
+--                                  return $ subst v e2 e1
+
+{-
+cbn'' :: Expr -> Exception Expr Expr
+cbn''  v@(Var _) = return v
+cbn''  l@(Lambda _ _) = return l
+cbn''  (App e1 e2) = (cbn'' e1) >>= \e1' ->
+                          case e1' of
+                            l@(Lambda x e) -> (return (subst' l e2)) >>= (cbn'')
+                            _          -> return $ App e1' e2
+
+beta'' :: Expr -> Exception Expr Expr
+beta'' (App e1 e2) =  (cbn''  e1) >>= \e1' ->
+                             case e1' of
+                               l@(Lambda x e) -> beta''  =<< (return (subst' l e2))
+                               _              -> App <$> (beta'' e1') <*> (beta'' e2)
+beta'' (Lambda v e) = fmap (Lambda v) $ beta''  e
+beta'' v@(Var _) = return v
+-}
+
+substd :: Ctxt -> Expr -> Expr -> Exception Expr Expr
+substd ctxt l@(Lambda v e1) e2 = if  needsAlpha e2 l then
+                              let (v', e1') = fixFreeVars e2 l
+                              in do
+                                --  tell $ [pprint $ ctxt $ App l e2]
+                                 throw $ ctxt $ subst v' e2 e1'
+                            else do
+                                --  tell $ [pprint $ ctxt $ App l e2]
+                                 throw $ ctxt $ subst v e2 e1
+
+cbn'' :: Ctxt -> Expr -> Exception Expr Expr
+cbn'' ctxt v@(Var _) = return v
+cbn'' ctxt l@(Lambda _ _) = return l
+cbn'' ctxt (App e1 e2) = (cbn'' (ctxt . app1C e2) e1) >>= \e1' ->
+                          case e1' of
+                            l@(Lambda x e) -> substd ctxt l e2 >>= (cbn'' ctxt)
+                            _          -> return $ App e1' e2
+
+beta'' :: Ctxt -> Expr -> Exception Expr Expr
+beta'' ctxt (App e1 e2) =  (cbn'' (ctxt . app1C e2) e1) >>= \e1' ->
+                             case e1' of
+                               l@(Lambda x e) -> (beta'' (ctxt))  =<< substd ctxt l e2
+                               _              -> App <$> (beta'' (ctxt . app1C e2) e1') <*> (beta'' (ctxt . app2C e1') e2)
+beta'' ctxt (Lambda v e) = fmap (Lambda v) $ beta'' (ctxt . lambdaC v) e
+beta'' ctxt v@(Var _) = return v
+
+runTestS s = do
+           putStrLn $ "==> " ++ pprint res
+  where
+     res = either id id $ beta'' id $ parseOrError s
+
+
+--  "(λn.λf.λx.f (n f x)) (λf.λx.f (f x))"
